@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PelaReeflet · 可嵌入的人机验证</title>
+<meta name="description" content="PELAGIC BEACON 开源的人机验证组件：一次点击 + SHA-256 工作量证明，无数据库、无外部依赖，MIT 协议。">
+<link rel="icon" href="/static/brand/pelareeflet-mark.svg" type="image/svg+xml">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f14; --bg-soft: #11161d; --card: #141a22; --line: #232b36;
+    --fg: #e6edf3; --fg-dim: #8b98a8; --fg-mute: #65707e;
+    --accent: #4e8ee0; --ok: #3fb950; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: radial-gradient(900px 420px at 50% -160px, #16243a 0%, var(--bg) 62%) no-repeat;
+    color: var(--fg); min-height: 100vh;
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 12px; padding: 16px 24px;
+    max-width: 760px; margin: 0 auto;
+  }
+  .topbar img { width: 22px; height: 22px; }
+  .topbar .name { font-size: 12.5px; letter-spacing: 1.6px; text-transform: uppercase; font-weight: 600; }
+  .topbar .sub { color: var(--fg-mute); font-size: 12px; }
+  .topbar nav { margin-left: auto; display: flex; gap: 16px; font-size: 12.5px; }
+  .topbar nav a { color: var(--fg-dim); }
+  .topbar nav a:hover { color: var(--fg); text-decoration: none; }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 90px; }
+
+  .hero { text-align: center; padding: 40px 0 30px; }
+  .hero h1 { margin: 0 0 12px; font-size: 30px; line-height: 1.3; letter-spacing: -.3px; }
+  .hero h1 .hl { color: var(--accent); }
+  .hero p { margin: 0 auto; max-width: 520px; color: var(--fg-dim); font-size: 14.5px; }
+
+  /* 验证卡 */
+  .gate {
+    margin: 26px auto 0; width: fit-content;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 22px 26px;
+    box-shadow: 0 12px 40px -18px rgba(0,0,0,.9);
+  }
+  .gate .line { display: flex; justify-content: center; margin-bottom: 12px; }
+  .chips { display: flex; justify-content: center; gap: 6px; }
+  .chip {
+    font: inherit; font-size: 11.5px; cursor: pointer;
+    padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--fg-mute);
+  }
+  .chip:hover { color: var(--fg); }
+  .chip.on { color: var(--fg); border-color: var(--accent); background: rgba(78,142,224,.14); }
+
+  .state { margin-top: 12px; font-size: 12px; color: var(--fg-mute); text-align: center; min-height: 18px; }
+
+  /* 文档区 */
+  .docs { position: relative; margin-top: 34px; }
+  .docs-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .docs-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .docs-head .hint { font-size: 12px; color: var(--fg-mute); }
+
+  .docs-body {
+    transition: filter .35s ease, opacity .35s ease;
+  }
+  .docs.locked .docs-body {
+    filter: blur(7px); opacity: .32; pointer-events: none; user-select: none;
+    max-height: 360px; overflow: hidden;
+  }
+
+  .lock {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; text-align: center;
+    transition: opacity .3s ease;
+  }
+  .lock.gone { opacity: 0; pointer-events: none; }
+  .lock .icon { width: 40px; height: 40px; opacity: .8; }
+  .lock .t { font-size: 14px; color: var(--fg-dim); }
+  .lock .s { font-size: 12px; color: var(--fg-mute); }
+  .lock button { margin-top: 2px; }
+
+  button {
+    font: inherit; font-size: 12.5px; cursor: pointer;
+    padding: 8px 16px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg-soft); color: var(--fg);
+    transition: border-color .15s, background .15s;
+  }
+  button:hover:not(:disabled) { border-color: #33404f; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #5c98e6; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+  .card + .card { margin-top: 12px; }
+  .card h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: #c9d3de; }
+  .card p { margin: 0 0 10px; font-size: 12.5px; color: var(--fg-mute); }
+  .card p:last-child { margin-bottom: 0; }
+
+  pre {
+    margin: 0; background: #0a0e13; border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; overflow: auto; font-size: 12px; line-height: 1.75; color: #c9d3de;
+  }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .row .path { font-size: 12px; color: var(--fg-mute); }
+  .row button { margin-left: auto; padding: 4px 12px; font-size: 11.5px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--fg-mute); font-weight: 500; }
+  td code { color: #9ec7f5; }
+
+  .banner {
+    background: #2a1a1a; border: 1px solid #5c2b2b; color: #ffb4ab;
+    padding: 12px 16px; border-radius: 8px; margin-top: 18px; font-size: 12.5px;
+  }
+  .banner ol { margin: 8px 0 0; padding-left: 20px; }
+  .banner code { color: #ffd7d2; background: #3a2020; padding: 1px 5px; border-radius: 3px; }
+
+  footer {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    font-size: 12px; color: var(--fg-mute);
+  }
+  footer .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--fg-dim); letter-spacing: 1.2px; text-transform: uppercase; }
+  footer img { width: 16px; height: 16px; }
+  footer .links { margin-left: auto; display: flex; gap: 16px; }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 24px; }
+    .gate { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <img src="/static/brand/pelareeflet-mark.svg" alt="">
+  <span class="name">Pelagic Beacon</span>
+  <span class="sub">PelaReeflet</span>
+  <nav>
+    <a href="{{ cfg.links.about }}" target="_blank" rel="noopener">GitHub</a>
+    <a href="{{ cfg.links.license }}" target="_blank" rel="noopener">开源协议</a>
+    <a href="/healthz" target="_blank" rel="noopener">状态</a>
+  </nav>
+</div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <h1>一次点击，<span class="hl">证明你是人</span></h1>
+    <p>PelaReeflet 可嵌入的人机验证组件：点一下，浏览器算一道 SHA-256 证明，服务端发一张一次性通行票。</p>
+  </header>
+
+  {% if not cfg.enabled %}
+  <div class="banner">
+    <strong>未配置密钥，组件处于「未就绪」状态。</strong>
+    <ol>
+      <li>生成密钥：<code>python -c "import secrets;print(secrets.token_hex(32))"</code></li>
+      <li>写进项目根目录的 <code>.env</code>：<code>REEFLET_SECRET=生成的串</code></li>
+      <li>重启服务</li>
+    </ol>
+  </div>
+  {% endif %}
+
+  <div class="gate">
+    <div class="line"><div class="pelareeflet" data-callback="onReefletToken"></div></div>
+    <div class="chips">
+      <button class="chip on" data-theme="dark">深色</button>
+      <button class="chip" data-theme="light">浅色</button>
+      <button class="chip" data-theme="auto">跟随系统</button>
+    </div>
+    <div class="state" id="state">验证通过后，下方接入文档自动解锁</div>
+  </div>
+
+  <section class="docs locked" id="docs">
+    <div class="docs-head">
+      <h2>接入文档</h2>
+      <span class="hint">通过上方验证后查看</span>
+    </div>
+
+    <div class="docs-body" id="docsBody">
+
+      <div class="card">
+        <h3>1. 引入组件</h3>
+        <p>一行 script + 一个容器，组件会自动挂载。</p>
+        <div class="row"><span class="path">index.html</span><button data-copy="snippet1">复制</button></div>
+<pre><code id="snippet1">&lt;script src="{{ request.url_root }}embed/pelareeflet.js" async defer&gt;&lt;/script&gt;
+
+&lt;div class="pelareeflet" data-callback="onReefletToken"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+  function onReefletToken(ticket) {
+    document.querySelector('[name="reeflet"]').value = ticket;
+  }
+&lt;/script&gt;</code></pre>
+      </div>
+
+      <div class="card">
+        <h3>2. 主题</h3>
+        <p>三种取值，属性优先于服务端默认配置，同一页面可混用。</p>
+<pre><code>&lt;!-- 深色（默认） --&gt;
+&lt;div class="pelareeflet"&gt;&lt;/div&gt;
+
+&lt;!-- 浅色 --&gt;
+&lt;div class="pelareeflet" data-theme="light"&gt;&lt;/div&gt;
+
+&lt;!-- 跟随系统，实时响应切换 --&gt;
+&lt;div class="pelareeflet" data-theme="auto"&gt;&lt;/div&gt;</code></pre>
+      </div>
+
+      <div class="card">
+        <h3>3. 后端核验</h3>
+        <p>前端拿到的只是 ticket，真正的结论由你的服务端向 PelaReeflet 换取。</p>
+        <div class="row"><span class="path">server.py</span><button data-copy="snippet2">复制</button></div>
+<pre><code id="snippet2">import requests
+
+def verify(ticket, user_ip=None):
+    r = requests.post("{{ request.url_root }}api/v1/siteverify", json={
+        "secret": REEFLET_SECRET,      # 与部署端的 REEFLET_SECRET 一致
+        "response": ticket,
+        "remoteip": user_ip,           # 可选：传了就校验 IP 绑定
+    }, timeout=3)
+    return r.json().get("success") is True
+
+# { "success": true, "challenge_ts": 1767225600, "hostname": "example.com" }
+# { "success": false, "error-codes": ["replayed"] }</code></pre>
+      </div>
+
+      <div class="card">
+        <h3>4. 接口一览</h3>
+        <table>
+          <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+          <tr><td>POST</td><td><code>/api/v1/challenge</code></td><td>签发挑战，单 IP 每秒限 2 次</td></tr>
+          <tr><td>POST</td><td><code>/api/v1/check</code></td><td>交互关卡：轨迹、按压时长、自动化特征</td></tr>
+          <tr><td>POST</td><td><code>/api/v1/solve</code></td><td>提交 PoW 答案，换取 ticket</td></tr>
+          <tr><td>POST</td><td><code>/api/v1/siteverify</code></td><td>服务端验票（本页用的就是它）</td></tr>
+          <tr><td>GET</td><td><code>/embed/pelareeflet.js</code></td><td>可嵌入组件</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>5. 错误码</h3>
+        <table>
+          <tr><th>reason</th><th>含义</th></tr>
+          <tr><td><code>replayed</code></td><td>票据已用过（一次性）</td></tr>
+          <tr><td><code>expired</code></td><td>票据过期</td></tr>
+          <tr><td><code>bad_ip</code></td><td>换网络了，需重新验证</td></tr>
+          <tr><td><code>wrong</code></td><td>PoW 答案不对</td></tr>
+          <tr><td><code>need_gate</code></td><td>跳过了点击关卡</td></tr>
+          <tr><td><code>automation</code></td><td>无头 / 自动化环境</td></tr>
+        </table>
+      </div>
+
+    </div>
+
+    <div class="lock" id="lock">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/>
+        <path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/>
+        <circle cx="12" cy="15.4" r="1.3" fill="currentColor" stroke="none"/>
+      </svg>
+      <div class="t">通过上方验证后查看嵌入文档</div>
+      <div class="s">点一下上面的方框，几秒就好</div>
+      <button id="openDocs" disabled>查看接入文档</button>
+    </div>
+  </section>
+
+  <footer>
+    <span class="brand"><img src="/static/brand/pelareeflet-mark.svg" alt="">Pelagic Beacon</span>
+    <span>PelaReeflet · 可嵌入的人机验证</span>
+    <span class="links">
+      <a href="{{ cfg.links.license }}" target="_blank" rel="noopener">开源协议</a>
+      <a href="{{ cfg.links.about }}" target="_blank" rel="noopener">关于我们</a>
+    </span>
+  </footer>
+
+</div>
+
+<script src="/embed/pelareeflet.js" async defer></script>
+<script>
+  var currentTheme = 'dark';
+  var unlocked = false;
+  var mount = null;
+
+  function renderWidget() {
+    mount = document.querySelector('.pelareeflet');
+    if (!mount) return;
+    if (mount._prfApi) mount._prfApi.destroy();
+    mount.removeAttribute('data-prf-ready');
+    PelaReeflet.render(mount, {
+      theme: currentTheme,
+      onSuccess: onReefletToken,
+      onFail: function (r) { setState('验证失败：' + r, 'bad'); }
+    });
+  }
+
+  function setState(text, cls) {
+    var el = document.getElementById('state');
+    el.textContent = text;
+    el.style.color = cls === 'ok' ? 'var(--ok)' : cls === 'bad' ? 'var(--bad)' : 'var(--fg-mute)';
+  }
+
+  function onReefletToken(ticket) {
+    setState('验证通过，正在核验票据…');
+    fetch('/demo/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket: ticket })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.success) {
+        setState('✓ 服务端核验通过', 'ok');
+        markReady();
+      } else {
+        setState('票据未被接受：' + d.reason, 'bad');
+      }
+    }).catch(function () {
+      setState('核验请求失败，请确认服务在运行', 'bad');
+    });
+  }
+
+  function markReady() {
+    if (unlocked) { unlock(); return; }
+    var btn = document.getElementById('openDocs');
+    btn.disabled = false;
+    btn.textContent = '查看接入文档';
+    btn.className = 'primary';
+    document.querySelector('#lock .t').textContent = '✓ 验证通过';
+    document.querySelector('#lock .s').textContent = '接入文档已准备好，点下面的按钮展开';
+  }
+
+  function unlock() {
+    if (unlocked) return;
+    unlocked = true;
+    document.getElementById('docs').classList.remove('locked');
+    document.getElementById('lock').classList.add('gone');
+    var body = document.getElementById('docsBody');
+    if (body && body.scrollIntoView) {
+      body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  document.getElementById('openDocs').addEventListener('click', unlock);
+
+  Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (chip) {
+    chip.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (c) {
+        c.classList.remove('on');
+      });
+      chip.classList.add('on');
+      currentTheme = chip.getAttribute('data-theme');
+      renderWidget();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var src = document.getElementById(btn.getAttribute('data-copy'));
+      var text = src.textContent;
+      var old = btn.textContent;
+      function done() { btn.textContent = '已复制'; setTimeout(function () { btn.textContent = old; }, 1500); }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+      } else { fallback(); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+  });
+
+  (function boot() {
+    if (!window.PelaReeflet) { setTimeout(boot, 40); return; }
+    renderWidget();
+  })();
+</script>
+</body>
+</html>

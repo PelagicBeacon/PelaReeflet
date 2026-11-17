@@ -9,7 +9,7 @@ from .config import ReefletConfig
 from .core import Reeflet
 from .routes import attach_cors, bp, register_embed
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = ["create_app", "Reeflet", "ReefletConfig"]
 
 _HERE = os.path.dirname(os.path.abspath(__file__))

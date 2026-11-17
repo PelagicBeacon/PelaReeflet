@@ -49,6 +49,9 @@ class ReefletConfig:
     click_min_path_px: int = 4
     click_max_speed: float = 15000.0
     automation_threshold: int = 6      # 自动化特征累加到这个分才拒绝
+    #: 「UA 像 Chrome 但没有 window.chrome」是否一票否决。默认否：国产手机
+    #: 自带浏览器 / 微信内置 / WebView 普遍没有它，一票否决会误伤大片真用户。
+    chrome_missing_hard: bool = False
     track_strict: bool = False         # 严格模式：轨迹评分超阈值直接拒绝
     track_threshold: int = 4
 
@@ -95,6 +98,7 @@ class ReefletConfig:
             challenge_rate=max(1, _int("REEFLET_CHALLENGE_RATE", 2)),
             click_gate=_bool("REEFLET_CLICK_GATE", True),
             automation_threshold=max(1, _int("REEFLET_AUTOMATION_THRESHOLD", 6)),
+            chrome_missing_hard=_bool("REEFLET_CHROME_MISSING_HARD", False),
             track_strict=_bool("REEFLET_TRACK_STRICT", False),
             track_threshold=max(1, _int("REEFLET_TRACK_THRESHOLD", 4)),
             brand=_str("REEFLET_BRAND", "PELAGIC BEACON"),

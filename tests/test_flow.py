@@ -164,6 +164,99 @@ def test_automation_score_blocks_fake_env():
     assert r.get_json()["reason"] == "automation"
 
 
+#: 荣耀自带的浏览器（Android WebView 内核）真实 UA。它带 "Chrome/131" 但页面里
+#: 没有 window.chrome —— 旧版本会因此直接判自动化，把人挡在门外。
+ANDROID_SHELL_UA = (
+    "Mozilla/5.0 (Linux; Android 17; BKQ-AN00 Build/HONORBKQ-AN00; wv) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+    "Chrome/131.0.6778.200 Mobile Safari/537.36"
+)
+DESKTOP_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.6778.200 Safari/537.36"
+)
+
+
+def _check(features, pointer_type="mouse", hold_ms=150, path=None, **overrides):
+    app = make_app(**overrides)
+    c = app.test_client()
+    c.environ_base["REMOTE_ADDR"] = "10.0.0.12"
+    job = c.post("/api/v1/challenge").get_json()
+    body = {
+        "token": job["token"],
+        "path": mouse_path() if path is None else path,
+        "pointer_type": pointer_type,
+        "hold_ms": hold_ms,
+        "features": features,
+    }
+    return c.post("/api/v1/check", json=body)
+
+
+def test_mobile_shell_without_window_chrome_passes():
+    """手机自带浏览器 / 微信内置浏览器没有 window.chrome，不能被判机器人。
+
+    回归用例：这一条曾经让 www.mcresource.cn 上所有国产壳浏览器的真人都过不去，
+    表现为点击之后稳定 403 automation，与轨迹无关。
+    """
+    r = _check(
+        {
+            "ua": ANDROID_SHELL_UA,
+            "chrome": False,
+            "webdriver": False,
+            "headless_ua": False,
+            "plugins": 0,
+            "languages": 1,
+            "hardware": 8,
+            "depth": 24,
+            "screen_w": 360,
+            "touch": 1,
+        },
+        pointer_type="touch",
+        hold_ms=90,
+        path=[],
+    )
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["gate"], r.get_json()
+
+
+def test_desktop_mode_on_phone_passes():
+    """手机开「桌面版网站」后 UA 变成 Windows，同样是壳浏览器，仍要放过。"""
+    r = _check({
+        "ua": DESKTOP_UA,
+        "chrome": False,
+        "webdriver": False,
+        "headless_ua": False,
+        "plugins": 0,
+        "languages": 1,
+        "hardware": 8,
+        "depth": 24,
+        "screen_w": 1920,
+    })
+    assert r.status_code == 200, r.get_json()
+
+
+def test_chrome_missing_hard_is_opt_in():
+    """需要旧行为（一条毙）时用 REEFLET_CHROME_MISSING_HARD=1 显式打开。"""
+    r = _check(
+        {"ua": ANDROID_SHELL_UA, "chrome": False, "webdriver": False},
+        pointer_type="touch",
+        hold_ms=90,
+        path=[],
+        chrome_missing_hard=True,
+    )
+    assert r.status_code == 403
+    assert r.get_json()["reason"] == "automation"
+
+
+def test_headless_chrome_still_blocked():
+    """真正确定性信号不能被放松：无头 UA 依旧是硬拒绝。"""
+    ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36")
+    r = _check({"ua": ua, "chrome": False, "headless_ua": True, "webdriver": False})
+    assert r.status_code == 403
+    assert r.get_json()["reason"] == "automation"
+
+
 def test_track_metrics_scores_scripted_path():
     from pelareeflet.core import _track_metrics
 

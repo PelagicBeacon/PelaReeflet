@@ -158,7 +158,7 @@ PoW 只是「提高成本」那一层，真正区分人和脚本靠下面两组�
 | --- | --- |
 | `navigator.webdriver === true` | **直接拒绝** |
 | UA 含 `HeadlessChrome` | **直接拒绝** |
-| UA 是 Chrome 但没有 `window.chrome` | **直接拒绝**（Puppeteer / Playwright 常见） |
+| UA 是 Chrome 但没有 `window.chrome` | 桌面 **+3**；移动壳浏览器 **+1** |
 | `plugins=0` 且 `languages=0` | +3 分 |
 | `hardwareConcurrency=0` | +2 分 |
 | `screen.colorDepth=0` | +2 分 |
@@ -166,6 +166,20 @@ PoW 只是「提高成本」那一层，真正区分人和脚本靠下面两组�
 
 累计 ≥ `REEFLET_AUTOMATION_THRESHOLD`（默认 6）即拒绝。**字段缺失按「未知」处理、不计分** ——
 老版本组件只上报部分字段时不会被误判。
+
+> **为什么「没有 `window.chrome`」不再一票否决**
+>
+> 这个属性在页面里是可伪造的：脚本补一句 `window.chrome = {}` 就消失了，
+> 所以它对真正的自动化几乎没有拦截价值。反过来误伤很实在 —— 下面这些环境的
+> UA 里照样带 `Chrome/131.x`，却普遍不暴露 `window.chrome`：
+>
+> - 荣耀 / 华为 / 小米 / OPPO 等手机自带浏览器
+> - 微信 / QQ / 钉钉内置浏览器
+> - Android WebView、Electron、部分企业套壳
+>
+> 1.0.0 把它们全部判成机器人（点击后稳定 403 `automation`，与轨迹无关），
+> 真实用户彻底无法通过。1.1.0 起改为按 UA 计分；确实需要旧行为时设
+> `REEFLET_CHROME_MISSING_HARD=1` 显式打开。
 
 ### 2. 鼠标轨迹
 
@@ -196,6 +210,7 @@ dt 本来就高度整齐，用它必然误伤（实测一条周期性轨迹的 d
 | `REEFLET_CHALLENGE_RATE` | `2` | 单 IP 每秒挑战数 |
 | `REEFLET_CLICK_GATE` | `true` | 是否启用「点击 + 行为」关卡 |
 | `REEFLET_AUTOMATION_THRESHOLD` | `6` | 自动化特征累加到多少分才拒绝 |
+| `REEFLET_CHROME_MISSING_HARD` | `false` | 「UA 像 Chrome 但没有 `window.chrome`」是否一票否决；开了会误伤手机自带浏览器 |
 | `REEFLET_TRACK_STRICT` | `false` | 轨迹评分超阈值时是否直接拒绝 |
 | `REEFLET_TRACK_THRESHOLD` | `4` | 轨迹评分拒绝阈值（仅 strict 模式生效） |
 | `REEFLET_BRAND` | `PELAGIC BEACON` | 组件右侧的品牌水印文字 |

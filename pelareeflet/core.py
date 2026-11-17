@@ -22,7 +22,25 @@ from .store import MemoryStore
 MAX_NONCE = 10 ** 15
 
 #: 命中即拒绝的确定性信号（一条就够）
-HARD_AUTOMATION = {"webdriver", "headless_ua", "chrome_missing"}
+#:
+#: 注意 `chrome_missing` **不在**这里：`window.chrome` 存在与否是页面里可伪造
+#: 的（脚本补一句 `window.chrome = {}` 就消失了），挡不住任何认真的自动化；
+#: 而反向误伤很实在 —— 国产 Chromium 壳普遍不暴露它：
+#:
+#:   · 荣耀 / 华为 / 小米 / OPPO 等自带浏览器
+#:   · 微信 / QQ / 钉钉内置浏览器
+#:   · Android WebView、Electron、部分企业套壳
+#:
+#: 它的 UA 里照样带 `Chrome/131.x`，于是被判成「假 Chrome」直接拒绝，
+#: 用户怎么点都过不去。所以它只作为计分信号，参与 automation_threshold。
+#: 需要恢复旧行为时设 REEFLET_CHROME_MISSING_HARD=1。
+HARD_AUTOMATION = {"webdriver", "headless_ua"}
+
+#: 各类 UA 里出现即视为「移动设备/壳浏览器」，其 chrome_missing 只记 +1
+MOBILE_UA_HINTS = (
+    "mobile", "android", "iphone", "ipad", "ipod", "harmonyos", "windows phone",
+    "micromessenger", "opera mini", "kindle", "silk/", "blackberry", "webview",
+)
 
 
 # ============================================================
@@ -128,7 +146,10 @@ class Reeflet:
         # --- 无头 / 自动化特征：确定性信号直接拒绝，可疑信号累加评分 ---
         auto_score, auto_reasons = self._score_features(features)
         if auto_reasons:
-            hard = [r for r in auto_reasons if r in HARD_AUTOMATION]
+            hard_names = HARD_AUTOMATION
+            if self.cfg.chrome_missing_hard:
+                hard_names = hard_names | {"chrome_missing"}
+            hard = [r for r in auto_reasons if r in hard_names]
             if hard:
                 return False, "automation", "", 10
             if auto_score >= self.cfg.automation_threshold:
@@ -192,6 +213,9 @@ class Reeflet:
         返回 (分数, 命中信号)。HARD_AUTOMATION 里的信号一条就拒绝，其余累加，
         达到 automation_threshold 才拒绝。
 
+        `chrome_missing` 视 UA 分别计 +3（桌面）/ +1（移动壳浏览器），
+        默认不单独拒绝 —— 理由见 HARD_AUTOMATION 上方注释。
+
         关键约定：**字段缺失 = 未知，不计分**。老版本组件、第三方集成可能只传
         部分字段，不能因此把人当机器人；只有「明确上报了异常值」才算信号。
         """
@@ -212,10 +236,11 @@ class Reeflet:
         if features.get("headless_ua") is True or "headlesschrome" in ua.lower():
             reasons.append("headless_ua")
 
-        # 有 Chrome 的 UA，却没有 window.chrome（Puppeteer / Playwright 常见）
+        # 有 Chrome 的 UA，却没有 window.chrome。桌面端像 Puppeteer / Playwright，
+        # 移动端则多半只是国产壳浏览器，两者证据强度差一个量级。
         if "chrome/" in ua.lower() and features.get("chrome") is False:
             reasons.append("chrome_missing")
-            score += 3
+            score += 1 if _looks_mobile(ua, features) else 3
 
         plugins = as_int("plugins")
         languages = as_int("languages")
@@ -422,6 +447,24 @@ def _track_metrics(points: list[tuple[float, float, float]]) -> dict:
         "back_ratio": round(back_ratio, 3),
         "length": round(length, 2),
     }
+
+
+def _looks_mobile(ua: str, features: dict) -> bool:
+    """判断这次上报是不是移动设备 / 壳浏览器。
+
+    三个来源任一说「是」就算移动端：UA 里的移动标记、组件上报的
+    `mobile`（来自 userAgentData，只有 Chromium 有）、UA 里的 touch 标记。
+    宁可放过（+1）也不要误伤：错判为移动端的代价只是少计 2 分。
+    """
+    text = (ua or "").lower()
+    if any(hint in text for hint in MOBILE_UA_HINTS):
+        return True
+    if features.get("mobile") is True:
+        return True
+    try:
+        return int(features.get("touch") or 0) == 1 and not text
+    except (TypeError, ValueError):
+        return False
 
 
 def _norm_path(raw) -> list[tuple[float, float, float]]:
